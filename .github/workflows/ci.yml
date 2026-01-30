@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mongouhd_evernorth
+          MYSQL_USER: mongouhd_evernorth
+          MYSQL_PASSWORD: changeme
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd='mysqladmin ping -h 127.0.0.1' --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install alembic
+      - name: Check required secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL}" ] || [ -z "${TEST_DATABASE_URL}" ]; then
+            echo "Missing required secrets. Please set DATABASE_URL and TEST_DATABASE_URL in repository secrets.";
+            exit 1
+          fi
+
+      - name: Validate secrets format
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+        run: |
+          python -m scripts.validate_secrets
+
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Format check (black)
+        run: black --check .
+      - name: Security checks (bandit)
+        run: bandit -r -x .venv
+
+      - name: Wait for MySQL
+        uses: jakejarvis/wait-action@v0.2.0
+        with:
+          url: 'tcp://127.0.0.1:3306'
+          timeout: '60'
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: 'mysql+pymysql://mongouhd_evernorth:changeme@127.0.0.1:3306/mongouhd_evernorth'
+        run: |
+          alembic upgrade head
+
+      - name: Docker Compose steps removed (using Actions MySQL service)
+        run: |
+          echo "Using the GitHub Actions provided MySQL service at 127.0.0.1:3306; docker-compose steps removed."
+
+      - name: Migration autogenerate check
+        run: |
+          set -e
+          git status --porcelain
+          # create an autogenerate revision in a temporary branch and see if it changes tree
+          alembic -c alembic.ini revision --autogenerate -m "ci-autogen-check-$$" --rev-id ci_check_$$
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERROR: models and migration scripts are out of sync. Please run: alembic revision --autogenerate -m 'your-message' and commit the changes."; exit 1
+          fi
+
+      - name: Run tests (unit + integration) with coverage
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          pytest --maxfail=1 -q --durations=10 --cov=src --cov-fail-under=80
+
+      - name: Pre-commit checks
+        run: |
+          pip install pre-commit
+          pre-commit install --install-hooks
+          pre-commit run --all-files -v
+
+      - name: Docker Compose teardown removed
+        if: always()
+        run: |
+          echo "No docker-compose teardown needed"
+

@@ -1,0 +1,6 @@
+# docker-compose removed
+# Docker-based development setup was removed per project decision.
+# If you need a containerized local environment, re-add a docker-compose.yml or follow
+# the documentation in README.md to run a local MySQL service and configure
+# DATABASE_URL/TEST_DATABASE_URL environment variables accordingly.
+

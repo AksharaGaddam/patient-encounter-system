@@ -1,0 +1,43 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker Compose removed
+        run: |
+          echo "Docker Compose is not required for this integration workflow. Provide TEST_DATABASE_URL as a secret to run against an existing test database."
+      - name: Check test secrets
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          if [ -z "${TEST_DATABASE_URL}" ]; then
+            echo "Missing TEST_DATABASE_URL secret. Please set it in repository secrets.";
+            exit 1
+          fi
+
+      - name: Run migrations on TEST_DATABASE_URL
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install alembic
+          alembic upgrade head
+      - name: (no service wait required)
+        run: |
+          echo "Assuming TEST_DATABASE_URL points to a running and healthy database."
+
+      - name: Run integration tests
+        env:
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+        run: |
+          pytest tests/integration -q -r a
+      - name: Teardown not required
+        if: always()
+        run: |
+          echo "No docker-compose resources to tear down in this workflow."

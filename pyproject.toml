@@ -1,0 +1,16 @@
+[project]
+name = "patient-encounter-system"
+version = "0.1.0"
+description = "Production-grade medical backend system"
+authors = [
+    {name = "Akshara",email = "akshara@example.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
